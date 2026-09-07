@@ -1,0 +1,141 @@
+{
+  "name": "@anti-slop/vscode-extension",
+  "displayName": "Anti-Slop Code Analyzer",
+  "description": "Analyze codebases for AI-generated patterns with Gemini Flash 2.0 (BYOK)",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other",
+    "Linters",
+    "Machine Learning"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "anti-slop.analyzeWorkspace",
+        "title": "Anti-Slop: Analyze Entire Workspace"
+      },
+      {
+        "command": "anti-slop.analyzeFile",
+        "title": "Anti-Slop: Analyze Current File"
+      },
+      {
+        "command": "anti-slop.analyzeFileWithSkills",
+        "title": "Anti-Slop: Analyze with All Skills"
+      },
+      {
+        "command": "anti-slop.selectSkills",
+        "title": "Anti-Slop: Select Skills and Analyze"
+      },
+      {
+        "command": "anti-slop.analyzeByCategory",
+        "title": "Anti-Slop: Analyze by Category"
+      },
+      {
+        "command": "anti-slop.listSkills",
+        "title": "Anti-Slop: List Available Skills"
+      },
+      {
+        "command": "anti-slop.configureApiKey",
+        "title": "Anti-Slop: Configure Gemini API Key"
+      },
+      {
+        "command": "anti-slop.showReport",
+        "title": "Anti-Slop: Show Analysis Report"
+      },
+      {
+        "command": "anti-slop.createPipeline",
+        "title": "Anti-Slop: Create Analysis Pipeline"
+      }
+    ],
+    "configuration": {
+      "title": "Anti-Slop",
+      "properties": {
+        "antiSlop.geminiApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Your Gemini API key (BYOK)",
+          "order": 1
+        },
+        "antiSlop.model": {
+          "type": "string",
+          "default": "gemini-2.0-flash-exp",
+          "enum": [
+            "gemini-2.0-flash-exp",
+            "gemini-1.5-flash",
+            "gemini-1.5-pro"
+          ],
+          "description": "Gemini model to use for analysis",
+          "order": 2
+        },
+        "antiSlop.analysisThreshold": {
+          "type": "number",
+          "default": 0.7,
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Confidence threshold for flagging vibe-coded patterns (0-1)",
+          "order": 3
+        },
+        "antiSlop.autoAnalyzeOnSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically analyze files on save",
+          "order": 4
+        },
+        "antiSlop.excludePatterns": {
+          "type": "array",
+          "default": [
+            "**/node_modules/**",
+            "**/dist/**",
+            "**/build/**",
+            "**/.git/**"
+          ],
+          "description": "Glob patterns to exclude from analysis",
+          "order": 5
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "anti-slop",
+          "title": "Anti-Slop",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "anti-slop": [
+        {
+          "id": "antiSlopResults",
+          "name": "Analysis Results"
+        },
+        {
+          "id": "antiSlopPipelines",
+          "name": "Pipelines"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
+    "watch": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --watch",
+    "package": "npm run compile"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.90.0",
+    "@types/node": "20.x",
+    "typescript": "^5.4.5",
+    "esbuild": "^0.21.5"
+  }
+}
