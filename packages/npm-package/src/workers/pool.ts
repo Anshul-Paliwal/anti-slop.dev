@@ -65,7 +65,11 @@ export class WorkerPool {
     const initPromises: Promise<void>[] = [];
 
     for (let i = 0; i < this.size; i++) {
-      initPromises.push(this.spawnWorker(i + 1));
+      initPromises.push(
+        this.spawnWorker(i + 1).catch(() => {
+          // Gracefully handle worker startup timeout/failure; falls back to inline execution
+        })
+      );
     }
 
     await Promise.all(initPromises);
@@ -81,8 +85,16 @@ export class WorkerPool {
           isBusy: false,
         };
 
+        const timer = setTimeout(() => {
+          try {
+            worker.terminate();
+          } catch {}
+          reject(new Error(`Worker ${id} initialization timed out`));
+        }, 2000);
+
         const onInitialMessage = (msg: WorkerOutboundMessage) => {
           if (msg.type === 'WORKER_READY') {
+            clearTimeout(timer);
             worker.off('message', onInitialMessage);
             this.setupWorkerListeners(state);
             this.workers.push(state);
@@ -93,6 +105,7 @@ export class WorkerPool {
         worker.on('message', onInitialMessage);
 
         worker.once('error', (err) => {
+          clearTimeout(timer);
           reject(err);
         });
       } catch (err) {
