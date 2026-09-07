@@ -1,0 +1,13 @@
+{
+  "name": "anti-slop-dev",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:frontend": "npm run dev -w @anti-slop/frontend",
+    "build:vscode": "npm run package -w @anti-slop/vscode-extension"
+  }
+}
