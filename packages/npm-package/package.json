@@ -1,21 +1,28 @@
 {
   "name": "@anti-slop/npm-package",
-  "version": "0.0.1",
-  "description": "NPM package skeleton",
+  "version": "0.1.0",
+  "description": "AntiSlop.dev Core Static Analysis Engine & CLI",
   "bin": {
-    "anti-slop": "./dist/cli.js"
+    "anti-slop": "./dist/cli.js",
+    "antislop": "./dist/cli.js"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "devDependencies": {
-    "typescript": "^5.0.0"
+    "test": "vitest run"
   },
   "dependencies": {
-    "commander": "^15.0.0"
+    "@anti-slop/shared": "*",
+    "commander": "^12.1.0",
+    "fast-glob": "^3.3.2",
+    "ignore": "^5.3.1",
+    "picocolors": "^1.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
   }
 }
