@@ -1,0 +1,21 @@
+{
+  "name": "@anti-slop/npm-package",
+  "version": "0.0.1",
+  "description": "NPM package skeleton",
+  "bin": {
+    "anti-slop": "./dist/cli.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "commander": "^15.0.0"
+  }
+}
