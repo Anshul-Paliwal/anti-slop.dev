@@ -7,6 +7,9 @@ import {
   WorkerOutboundMessage,
   SlopIssue,
 } from '@anti-slop/shared';
+import { parseSource } from '../ast/parser';
+import { buildLineMap } from '../ast/visitor';
+import { executeRules } from '../rules';
 
 if (!parentPort) {
   throw new Error('anti-slop worker must be spawned via Node.js worker_threads');
@@ -32,9 +35,32 @@ parentPort.on('message', async (message: WorkerInboundMessage) => {
     try {
       for (const file of files) {
         try {
-          // Verify file accessibility and read file content
-          // (In Stage 2/3, this content is passed directly to the Oxc/SWC/PostCSS AST parsers)
-          await fs.promises.readFile(file.absolutePath, 'utf-8');
+          // 1. Read file contents from disk
+          const source = await fs.promises.readFile(file.absolutePath, 'utf-8');
+
+          // 2. Parse source code into AST
+          const parseResult = parseSource(source, file.absolutePath);
+
+          if (parseResult.ast) {
+            // 3. Build line map for offset → line:column conversion
+            const lineMap = buildLineMap(source);
+
+            // 4. Run all registered rules against the AST
+            const fileIssues = executeRules(
+              parseResult.ast,
+              source,
+              file.relativePath,
+              lineMap
+            );
+
+            issues.push(...fileIssues);
+          } else if (parseResult.error) {
+            errors.push({
+              file: file.relativePath,
+              message: `Parse error: ${parseResult.error}`,
+            });
+          }
+
           processedFiles++;
         } catch (err: any) {
           errors.push({

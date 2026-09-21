@@ -201,16 +201,41 @@ export class WorkerPool {
    * Fallback in-line execution for development or single-thread environments.
    */
   private async executeInline(batches: WorkerBatchTask[]): Promise<WorkerBatchResult[]> {
+    // Lazy imports to avoid loading parser in the main thread unless needed
+    const { parseSource } = require('../ast/parser');
+    const { buildLineMap } = require('../ast/visitor');
+    const { executeRules } = require('../rules');
+
     const results: WorkerBatchResult[] = [];
 
     for (const batch of batches) {
       const startTime = Date.now();
       const errors: Array<{ file: string; message: string }> = [];
+      const issues: import('@anti-slop/shared').SlopIssue[] = [];
       let processedFiles = 0;
 
       for (const file of batch.files) {
         try {
-          await fs.promises.readFile(file.absolutePath, 'utf-8');
+          const source = await fs.promises.readFile(file.absolutePath, 'utf-8');
+
+          const parseResult = parseSource(source, file.absolutePath);
+
+          if (parseResult.ast) {
+            const lineMap = buildLineMap(source);
+            const fileIssues = executeRules(
+              parseResult.ast,
+              source,
+              file.relativePath,
+              lineMap
+            );
+            issues.push(...fileIssues);
+          } else if (parseResult.error) {
+            errors.push({
+              file: file.relativePath,
+              message: `Parse error: ${parseResult.error}`,
+            });
+          }
+
           processedFiles++;
         } catch (err: any) {
           errors.push({
@@ -224,7 +249,7 @@ export class WorkerPool {
         batchId: batch.batchId,
         processedFiles,
         durationMs: Date.now() - startTime,
-        issues: [],
+        issues,
         errors,
       });
     }

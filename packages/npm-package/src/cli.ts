@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
-import { runScanPipeline } from './orchestrator';
+import { runScanPipeline } from './orchestrator.js';
+import { renderTerminalReport } from './reporter/terminal';
+import { writeMarkdownReport } from './reporter/markdown';
 import { logger } from './utils/logger';
 
 const program = new Command();
@@ -33,8 +35,34 @@ program
         verbose: options.verbose || options.dryRun,
       });
 
-      if (!options.dryRun && result.discovery.totalCount > 0) {
-        logger.success(`Stage 1 scan complete. ${result.totalProcessedFiles} file(s) ready for analysis.`);
+      if (options.dryRun) {
+        return;
+      }
+
+      if (result.discovery.totalCount > 0) {
+        // Render the rich terminal UI
+        renderTerminalReport(
+          result.issues,
+          result.totalProcessedFiles,
+          result.totalDurationMs
+        );
+
+        // Write the markdown report
+        const outputPath = options.output || 'antislop-report.md';
+        const reportPath = writeMarkdownReport(
+          result.issues,
+          outputPath,
+          result.totalProcessedFiles,
+          result.totalDurationMs
+        );
+
+        logger.success(`Report written to ${reportPath}`);
+      }
+
+      // Exit with error code if errors found
+      const hasErrors = result.issues.some((i) => i.severity === 'error');
+      if (hasErrors) {
+        process.exit(1);
       }
     } catch (err: any) {
       logger.error(err?.message || 'Scan failed with an unknown error');

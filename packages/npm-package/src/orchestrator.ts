@@ -2,6 +2,7 @@ import { performance } from 'node:perf_hooks';
 import {
   FileDiscoveryResult,
   ScanOptions,
+  SlopIssue,
   WorkerBatchResult,
 } from '@anti-slop/shared';
 import { discoverFiles } from './discovery';
@@ -11,6 +12,7 @@ import { logger } from './utils/logger';
 export interface PipelineResult {
   discovery: FileDiscoveryResult;
   batchResults: WorkerBatchResult[];
+  issues: SlopIssue[];
   totalProcessedFiles: number;
   totalDurationMs: number;
 }
@@ -41,6 +43,7 @@ export async function runScanPipeline(options: ScanOptions): Promise<PipelineRes
     return {
       discovery,
       batchResults: [],
+      issues: [],
       totalProcessedFiles: discovery.totalCount,
       totalDurationMs,
     };
@@ -51,6 +54,7 @@ export async function runScanPipeline(options: ScanOptions): Promise<PipelineRes
     return {
       discovery,
       batchResults: [],
+      issues: [],
       totalProcessedFiles: 0,
       totalDurationMs: Math.round(performance.now() - pipelineStart),
     };
@@ -71,6 +75,7 @@ export async function runScanPipeline(options: ScanOptions): Promise<PipelineRes
   }
 
   const totalProcessedFiles = batchResults.reduce((sum, r) => sum + r.processedFiles, 0);
+  const issues = batchResults.flatMap((r) => r.issues);
   const totalDurationMs = Math.round(performance.now() - pipelineStart);
 
   if (options.verbose) {
@@ -82,6 +87,7 @@ export async function runScanPipeline(options: ScanOptions): Promise<PipelineRes
   return {
     discovery,
     batchResults,
+    issues,
     totalProcessedFiles,
     totalDurationMs,
   };

@@ -1,4 +1,9 @@
 import { describe, it, expect, afterEach } from 'vitest';
+import { fileURLToPath } from 'node:url';
+import { dirname } from 'node:path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 import { createFileBatches, getDefaultConcurrency } from '../src/workers/batcher';
 import { WorkerPool } from '../src/workers/pool';
 import { DiscoveredFile } from '@anti-slop/shared';

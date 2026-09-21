@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
+import { fileURLToPath } from 'node:url';
+import { dirname } from 'node:path';
 import path from 'node:path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 import { IgnoreManager, DEFAULT_IGNORE_PATTERNS } from '../src/discovery/ignore-rules';
 import { discoverFiles } from '../src/discovery/discoverer';
 
@@ -38,8 +43,8 @@ describe('discoverFiles', () => {
 
     expect(result.totalCount).toBeGreaterThan(0);
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
-    expect(result.files.some((f) => f.relativePath.includes('src/discovery/discoverer.ts'))).toBe(true);
-    expect(result.files.every((f) => !f.relativePath.includes('node_modules'))).toBe(true);
+    expect(result.files.some((f: any) => f.relativePath.includes('src/discovery/discoverer.ts'))).toBe(true);
+    expect(result.files.every((f: any) => !f.relativePath.includes('node_modules'))).toBe(true);
   });
 
   it('should support scanning a single file directly', async () => {
