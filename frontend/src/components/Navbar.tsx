@@ -18,10 +18,10 @@ export default function Navbar() {
   }, []);
 
   const navLinks = [
-    { name: "About", href: "#about" },
-    { name: "Documentation", href: "#docs" },
-    { name: "Installation Guide", href: "#install" },
-    { name: "FAQ", href: "#faq" },
+    { name: "About", href: "/about" },
+    { name: "Documentation", href: "/docs" },
+    { name: "Installation Guide", href: "/install" },
+    { name: "FAQ", href: "/faq" },
   ];
 
   return (
@@ -62,13 +62,13 @@ export default function Navbar() {
               href="/login" 
               className="text-sm font-medium text-foreground hover:text-terminal-green transition-colors"
             >
-              Login
+              Log In
             </Link>
             <Link 
               href="/signup" 
               className="px-4 py-2 text-sm font-medium bg-white/5 border border-white/10 rounded-full hover:bg-white/10 transition-colors"
             >
-              Sign In
+              Sign Up
             </Link>
           </div>
         </div>
@@ -101,6 +101,22 @@ export default function Navbar() {
               {link.name}
             </Link>
           ))}
+          <div className="flex flex-col items-center gap-4 mt-6">
+            <Link
+              href="/login"
+              className="text-lg font-medium text-foreground hover:text-terminal-green transition-colors"
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              Log In
+            </Link>
+            <Link
+              href="/signup"
+              className="px-6 py-2.5 text-base font-medium bg-white/10 border border-white/20 rounded-full hover:bg-white/20 transition-colors"
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              Sign Up
+            </Link>
+          </div>
         </motion.div>
       )}
     </motion.header>

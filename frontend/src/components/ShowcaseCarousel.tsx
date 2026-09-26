@@ -63,7 +63,10 @@ export default function ShowcaseCarousel() {
         </div>
         
         <div className="relative w-full h-[500px] flex items-center justify-center">
-        <AnimatePresence initial={false} mode="popLayout">
+          {/* Ambient carousel backdrop glow */}
+          <div className="absolute w-[600px] h-[300px] bg-gradient-to-r from-terminal-green/15 via-cyan-400/10 to-purple-500/10 rounded-full blur-[100px] pointer-events-none -z-10" />
+
+          <AnimatePresence initial={false} mode="popLayout">
           {slides.map((slide, i) => {
             const isActive = i === currentIndex;
             const isPrev = i === (currentIndex - 1 + slides.length) % slides.length;
