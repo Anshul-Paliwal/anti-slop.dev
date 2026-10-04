@@ -2,38 +2,67 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Terminal } from "lucide-react";
 
 const slides = [
   {
     id: 1,
-    title: "VS Code Extension",
-    description: "Inline warning squiggles on slop code right in your editor.",
-    imagePlaceholder: "VS Code Mockup",
+    title: "Edit Issue",
+    description: "Real-time AST squiggles directly in your editor.",
+    code: `export default function UserProfile({ user }) {
+  // AntiSlop: Unnecessary nested memoization detected
+  const data = useMemo(() => {
+    return useMemo(() => user.data, [user.data]);
+  }, [user]);
+
+  return <div>{data.name}</div>;
+}`,
+    lang: "tsx",
+    highlightLines: [2, 3, 4, 5],
+    color: "#ff5f56"
   },
   {
     id: 2,
-    title: "CLI Scan",
-    description: "Terminal output and antislop-report.md from a project scan.",
-    imagePlaceholder: "Terminal Mockup",
+    title: "Pro Auto-Fix",
+    description: "One-click remediation for AI-generated slop.",
+    code: `export default function UserProfile({ user }) {
+  // Purged 2 levels of redundant memoization
+  // AST simplified to direct access
+  const data = user.data;
+
+  return <div>{data.name}</div>;
+}`,
+    lang: "tsx",
+    highlightLines: [4],
+    color: "#27c93f"
   },
   {
     id: 3,
-    title: "Pro Auto-Fix",
-    description: "Before/after diff showcasing one-click resolution.",
-    imagePlaceholder: "Diff Mockup",
+    title: "CLI Report",
+    description: "Deterministic terminal reports for your CI/CD.",
+    code: `$ antislop scan ./src
+
+[WARN] src/components/Hero.tsx:12
+       Detected phantom wrapper 'LayoutContainer'
+       Fix: Unwrap children directly
+
+[PASS] Scanned 1,402 files in 1.2s.
+       1 issue found.`,
+    lang: "bash",
+    highlightLines: [4, 5],
+    color: "#ffbd2e"
   },
 ];
 
 export default function ShowcaseCarousel() {
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(1);
   const [isHovered, setIsHovered] = useState(false);
 
   useEffect(() => {
     if (isHovered) return;
     const timer = setInterval(() => {
       setCurrentIndex((prev) => (prev + 1) % slides.length);
-    }, 5000);
+    }, 4000);
     return () => clearInterval(timer);
   }, [isHovered]);
 
@@ -46,75 +75,148 @@ export default function ShowcaseCarousel() {
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      <div className="max-w-7xl mx-auto px-6 relative flex flex-col items-center">
-        {/* Terminal Header */}
-        <div className="w-full text-center mb-10">
-          <div className="inline-flex items-center text-muted-foreground font-mono text-sm mb-4">
-            ../Features/Showcase../
+      <div className="max-w-[1400px] mx-auto px-6 relative flex flex-col items-center">
+        {/* Typewriter Header */}
+        <div className="w-full text-center mb-16">
+          <div className="inline-flex items-center text-white/40 font-mono text-[10px] uppercase tracking-widest mb-4 gap-2">
+             <span className="w-1.5 h-1.5 bg-white/20 rounded-full"></span>
+            ../analysis/showcase..
+          </div>
+          <h2 className="text-3xl md:text-5xl font-mono font-bold text-white tracking-tight flex items-center justify-center flex-wrap">
+            See the cleanup action: before, after, and pro auto-fix
             <motion.span
               animate={{ opacity: [1, 1, 0, 0, 1] }}
-              transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-              className="inline-block w-2 h-[1em] bg-muted-foreground ml-1 align-middle"
+              transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }}
+              className="inline-block w-[0.5em] h-[0.8em] bg-white ml-2 align-middle mb-1 opacity-80"
             />
-          </div>
-          <h2 className="text-4xl md:text-5xl font-heading font-bold text-foreground tracking-tight">
-            See the cleanup in action.
           </h2>
         </div>
         
-        <div className="relative w-full h-[500px] flex items-center justify-center">
-          {/* Ambient carousel backdrop glow */}
-          <div className="absolute w-[600px] h-[300px] bg-gradient-to-r from-terminal-green/15 via-cyan-400/10 to-purple-500/10 rounded-full blur-[100px] pointer-events-none -z-10" />
+        {/* Carousel Container */}
+        <div className="relative w-full h-[450px] md:h-[500px] flex items-center justify-center perspective-[1000px]">
+          {/* Ambient glow behind active card */}
+          <div className="absolute w-[60%] h-[60%] bg-terminal-green/5 blur-[120px] pointer-events-none -z-10 rounded-full" />
 
-          <AnimatePresence initial={false} mode="popLayout">
-          {slides.map((slide, i) => {
-            const isActive = i === currentIndex;
-            const isPrev = i === (currentIndex - 1 + slides.length) % slides.length;
-            const isNext = i === (currentIndex + 1) % slides.length;
+          <AnimatePresence initial={false}>
+            {slides.map((slide, i) => {
+              const isActive = i === currentIndex;
+              const isPrev = i === (currentIndex - 1 + slides.length) % slides.length;
+              const isNext = i === (currentIndex + 1) % slides.length;
 
-            if (!isActive && !isPrev && !isNext) return null;
+              if (!isActive && !isPrev && !isNext) return null;
 
-            return (
-              <motion.div
-                key={slide.id}
-                layout
-                initial={{ opacity: 0, scale: 0.8, x: isNext ? 300 : isPrev ? -300 : 0 }}
-                animate={{
-                  opacity: isActive ? 1 : 0.4,
-                  scale: isActive ? 1 : 0.7,
-                  x: isActive ? 0 : isNext ? "60%" : "-60%",
-                  zIndex: isActive ? 30 : 10,
-                }}
-                exit={{ opacity: 0, scale: 0.8 }}
-                transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                className="absolute w-full max-w-4xl h-[400px] bg-[#121214] border border-white/10 rounded-2xl p-8 flex flex-col items-center justify-center shadow-2xl"
-              >
-                <div className="flex-1 w-full flex items-center justify-center bg-black/50 rounded-xl border border-white/5 mb-6">
-                  <span className="font-mono text-muted-foreground">{slide.imagePlaceholder}</span>
-                </div>
-                <div className="text-center">
-                  <h3 className="text-2xl font-heading font-semibold text-foreground mb-2">{slide.title}</h3>
-                  <p className="text-muted-foreground">{slide.description}</p>
-                </div>
-              </motion.div>
-            );
-          })}
-        </AnimatePresence>
+              // Calculate positions
+              let x = 0;
+              let scale = 1;
+              let zIndex = 30;
+              let rotateY = 0;
+              let opacity = 1;
 
-        {/* Controls */}
-        <button
-          onClick={handlePrev}
-          className="absolute left-4 md:left-12 z-40 w-12 h-12 bg-white/5 border border-white/10 rounded-full flex items-center justify-center text-foreground hover:bg-white/10 hover:border-terminal-green/50 transition-colors backdrop-blur-md"
-        >
-          <ChevronLeft size={24} />
-        </button>
-        <button
-          onClick={handleNext}
-          className="absolute right-4 md:right-12 z-40 w-12 h-12 bg-white/5 border border-white/10 rounded-full flex items-center justify-center text-foreground hover:bg-white/10 hover:border-terminal-green/50 transition-colors backdrop-blur-md"
-        >
-          <ChevronRight size={24} />
-        </button>
+              if (isActive) {
+                x = 0;
+                scale = 1;
+                zIndex = 30;
+                rotateY = 0;
+                opacity = 1;
+              } else if (isPrev) {
+                x = -400; // Shift left
+                scale = 0.8;
+                zIndex = 10;
+                rotateY = 15; // Angle slightly
+                opacity = 0.4;
+              } else if (isNext) {
+                x = 400; // Shift right
+                scale = 0.8;
+                zIndex = 10;
+                rotateY = -15; // Angle slightly
+                opacity = 0.4;
+              }
+
+              return (
+                <motion.div
+                  key={slide.id}
+                  className="absolute top-0 w-full max-w-[700px] h-full"
+                  initial={false}
+                  animate={{
+                    x: x,
+                    scale: scale,
+                    zIndex: zIndex,
+                    rotateY: rotateY,
+                    opacity: opacity,
+                  }}
+                  transition={{ 
+                    type: "spring", 
+                    stiffness: 250, 
+                    damping: 25, 
+                    mass: 0.8 
+                  }}
+                  style={{ transformOrigin: "center center" }}
+                  onClick={() => {
+                    if (isPrev) handlePrev();
+                    if (isNext) handleNext();
+                  }}
+                >
+                  {/* Card Body */}
+                  <div className={`w-full h-full flex flex-col bg-[#0f0f13] border ${isActive ? 'border-white/15' : 'border-white/5'} rounded-2xl shadow-2xl overflow-hidden backdrop-blur-xl transition-colors cursor-pointer`}>
+                    
+                    {/* Fake Mac Titlebar */}
+                    <div className="flex items-center justify-between px-4 py-3 bg-[#111] border-b border-white/10 shrink-0">
+                      <div className="flex gap-2">
+                        <div className="w-2.5 h-2.5 rounded-full bg-[#ff5f56] border border-black/20"></div>
+                        <div className="w-2.5 h-2.5 rounded-full bg-[#ffbd2e] border border-black/20"></div>
+                        <div className="w-2.5 h-2.5 rounded-full bg-[#27c93f] border border-black/20"></div>
+                      </div>
+                      <div className="text-[10px] text-white/30 font-mono flex items-center gap-2 select-none uppercase tracking-widest">
+                         {slide.lang}
+                      </div>
+                      <div className="w-12"></div>
+                    </div>
+
+                    {/* Code Area */}
+                    <div className="flex-1 p-6 md:p-8 bg-[#0a0a0a] overflow-hidden relative">
+                      {/* Line Numbers & Code */}
+                      <div className="font-mono text-xs md:text-sm leading-relaxed overflow-hidden">
+                         {slide.code.split('\n').map((line, idx) => {
+                           const isHighlighted = slide.highlightLines.includes(idx + 1);
+                           return (
+                             <div 
+                               key={idx} 
+                               className={`flex items-start ${isHighlighted ? 'bg-white/5 -mx-6 px-6 border-l-2' : ''}`}
+                               style={{ borderColor: isHighlighted ? slide.color : 'transparent' }}
+                             >
+                               <span className="w-8 shrink-0 text-white/20 select-none text-right pr-4">{idx + 1}</span>
+                               <span className={`${isHighlighted ? 'text-white' : 'text-white/60'} whitespace-pre-wrap font-mono`}>{line}</span>
+                             </div>
+                           );
+                         })}
+                      </div>
+                    </div>
+
+                    {/* Footer Area with Title/Description */}
+                    <div className="p-6 md:p-8 bg-[#111] border-t border-white/10 flex flex-col items-center justify-center text-center shrink-0">
+                      <h3 className="text-xl md:text-2xl font-bold font-mono text-white mb-2">{slide.title}</h3>
+                      <p className="text-sm md:text-base text-white/50 font-mono">{slide.description}</p>
+                    </div>
+
+                  </div>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
         </div>
+
+        {/* Subtle Navigation Dots (Optional, since cards are clickable) */}
+        <div className="mt-12 flex gap-3">
+          {slides.map((_, i) => (
+            <button
+              key={i}
+              onClick={() => setCurrentIndex(i)}
+              className={`w-2 h-2 rounded-full transition-all ${i === currentIndex ? 'bg-terminal-green w-6' : 'bg-white/20 hover:bg-white/40'}`}
+              aria-label={`Go to slide ${i + 1}`}
+            />
+          ))}
+        </div>
+
       </div>
     </section>
   );

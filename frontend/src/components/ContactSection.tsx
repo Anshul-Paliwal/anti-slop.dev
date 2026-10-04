@@ -26,7 +26,7 @@ export default function ContactSection() {
                 Contact
               </h2>
               <p className="text-muted-foreground leading-relaxed max-w-md">
-                Have questions about AntiSlop's AST purification, local privacy, or enterprise integration? We're here to help you clean up your codebase.
+                Have questions about AntiSlop&apos;s AST purification, local privacy, or enterprise integration? We&apos;re here to help you clean up your codebase.
               </p>
             </div>
 

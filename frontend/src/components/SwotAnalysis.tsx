@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 import { useState } from "react";
-import { Terminal, Zap, Shield, Clock, Sparkles, CheckCircle2 } from "lucide-react";
+import { Terminal, CheckCircle2 } from "lucide-react";
 
 interface AdvantageTab {
   id: string;

@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useEffect, useState } from "react";
 
 export interface KineticCenterBuildProps {
@@ -40,8 +40,10 @@ export default function KineticCenterBuild({
       return () => clearTimeout(holdId);
     }
 
-    setWordCount(1);
-    setExiting(false);
+    setTimeout(() => {
+      setWordCount(1);
+      setExiting(false);
+    }, 0);
 
     const buildTimers: ReturnType<typeof setTimeout>[] = [];
 

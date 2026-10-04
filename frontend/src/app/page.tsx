@@ -5,7 +5,8 @@ import Hero from "@/components/Hero";
 // Dynamically import below-the-fold and heavy animation components
 const InstallRow = dynamic(() => import("@/components/InstallRow"));
 const ShowcaseCarousel = dynamic(() => import("@/components/ShowcaseCarousel"));
-const AboutSection = dynamic(() => import("@/components/AboutSection"));
+const AstPurification = dynamic(() => import("@/components/AstPurification"));
+
 const SwotAnalysis = dynamic(() => import("@/components/SwotAnalysis"));
 const Footer = dynamic(() => import("@/components/Footer"));
 const TerminalIntro = dynamic(() => import("@/components/TerminalIntro"));
@@ -23,8 +24,9 @@ export default function Home() {
         <SectionDivider />
         <ShowcaseCarousel />
         <SectionDivider />
-        <AboutSection />
+        <AstPurification />
         <SectionDivider />
+
         <SwotAnalysis />
         <SectionDivider />
         <InstallRow />

@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronDown } from "lucide-react";
-import { motion, useReducedMotion } from "motion/react";
+import { motion, useReducedMotion } from "framer-motion";
 import { useState } from "react";
 
 const CHEVRON_ROTATION_DEGREES = 180;
@@ -42,23 +42,24 @@ export default function BasicAccordion({
 
   return (
     <div
-      className={`flex w-full flex-col divide-y divide-white/10 overflow-hidden rounded-2xl border border-white/10 bg-[#0D0D11]/80 backdrop-blur-xl shadow-2xl ${className}`}
+      className={`flex w-full flex-col overflow-hidden space-y-2 ${className}`}
     >
       {items.map((item) => {
         const isExpanded = expandedItems.includes(item.id);
 
         return (
-          <div className="overflow-hidden group" key={item.id}>
+          <div className="overflow-hidden group rounded-lg border border-white/10 bg-[#111]" key={item.id}>
             <button
               aria-controls={`accordion-content-${item.id}`}
               aria-expanded={isExpanded}
-              className="flex min-h-[56px] w-full cursor-pointer items-center justify-between gap-4 px-6 py-4.5 text-left transition-colors bg-[#0D0D11]/60 hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-terminal-green"
+              className={`flex min-h-[50px] w-full cursor-pointer items-center justify-between gap-4 px-5 py-4 text-left transition-colors bg-[#111] hover:bg-white/5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-terminal-green ${isExpanded ? "border-b border-white/10" : ""}`}
               id={`accordion-header-${item.id}`}
               onClick={() => toggleItem(item.id)}
               type="button"
             >
-              <h3 className={`font-heading font-medium text-base sm:text-lg transition-colors ${isExpanded ? "text-terminal-green font-semibold" : "text-foreground group-hover:text-foreground/90"}`}>
-                {item.title}
+              <h3 className="font-mono font-bold text-sm sm:text-base flex items-start gap-3">
+                <span className="text-terminal-green/50 select-none">Q.</span>
+                <span className={isExpanded ? "text-white" : "text-white/80 group-hover:text-white"}>{item.title}</span>
               </h3>
               <motion.div
                 animate={{ rotate: isExpanded ? CHEVRON_ROTATION_DEGREES : 0 }}
@@ -96,7 +97,7 @@ export default function BasicAccordion({
                     }
               }
             >
-              <div className="border-t border-white/5 bg-[#09090C]/80 px-6 py-5 text-sm sm:text-base text-muted-foreground/90 leading-relaxed font-sans">
+              <div className="bg-[#0a0a0a] px-5 py-5 text-sm text-[#A3A3A3] font-mono leading-relaxed pl-12 border-t border-transparent">
                 {item.content}
               </div>
             </motion.div>
