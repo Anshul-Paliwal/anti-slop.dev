@@ -1,6 +1,7 @@
 {
-  "name": "@anti-slop/vscode-extension",
+  "name": "anti-slop-vscode",
   "displayName": "Anti-Slop Code Analyzer",
+  "publisher": "anti-slop",
   "description": "Analyze codebases for AI-generated patterns with Gemini Flash 2.0 (BYOK)",
   "version": "0.0.1",
   "engines": {
@@ -26,6 +27,10 @@
         "title": "Anti-Slop: Analyze Current File"
       },
       {
+        "command": "anti-slop.analyzeFileUnified",
+        "title": "Anti-Slop: Quick Slop Scan (Free Tier Unified)"
+      },
+      {
         "command": "anti-slop.analyzeFileWithSkills",
         "title": "Anti-Slop: Analyze with All Skills"
       },
@@ -46,6 +51,18 @@
         "title": "Anti-Slop: Configure Gemini API Key"
       },
       {
+        "command": "anti-slop.getFreeApiKey",
+        "title": "Anti-Slop: Get Free Gemini API Key (Google AI Studio)"
+      },
+      {
+        "command": "anti-slop.testApiKey",
+        "title": "Anti-Slop: Test Gemini API Key"
+      },
+      {
+        "command": "anti-slop.clearResults",
+        "title": "Anti-Slop: Clear Results & Diagnostics"
+      },
+      {
         "command": "anti-slop.showReport",
         "title": "Anti-Slop: Show Analysis Report"
       },
@@ -60,19 +77,26 @@
         "antiSlop.geminiApiKey": {
           "type": "string",
           "default": "",
-          "description": "Your Gemini API key (BYOK)",
+          "description": "Your Gemini API key (BYOK from Google AI Studio)",
           "order": 1
         },
         "antiSlop.model": {
           "type": "string",
-          "default": "gemini-2.0-flash-exp",
+          "default": "gemini-3.8-flash",
           "enum": [
-            "gemini-2.0-flash-exp",
-            "gemini-1.5-flash",
-            "gemini-1.5-pro"
+            "gemini-3.8-flash",
+            "gemini-3.8-pro",
+            "gemini-3.0-flash",
+            "gemini-2.5-flash"
           ],
-          "description": "Gemini model to use for analysis",
+          "description": "Gemini model to use for analysis (gemini-3.8-flash recommended)",
           "order": 2
+        },
+        "antiSlop.useUnifiedScan": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use single-request unified analysis to conserve Gemini Free Tier 15 RPM quota",
+          "order": 3
         },
         "antiSlop.analysisThreshold": {
           "type": "number",
@@ -80,13 +104,25 @@
           "minimum": 0,
           "maximum": 1,
           "description": "Confidence threshold for flagging vibe-coded patterns (0-1)",
-          "order": 3
+          "order": 4
+        },
+        "antiSlop.enableInlineDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show AI slop warnings and errors directly in the VS Code editor & Problems panel",
+          "order": 5
+        },
+        "antiSlop.enableLocalHeuristics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run local AST heuristic checks (console.log, debugger, empty catch) with 0 API calls",
+          "order": 6
         },
         "antiSlop.autoAnalyzeOnSave": {
           "type": "boolean",
           "default": false,
           "description": "Automatically analyze files on save",
-          "order": 4
+          "order": 7
         },
         "antiSlop.excludePatterns": {
           "type": "array",
@@ -97,7 +133,7 @@
             "**/.git/**"
           ],
           "description": "Glob patterns to exclude from analysis",
-          "order": 5
+          "order": 8
         }
       }
     },
@@ -130,12 +166,13 @@
     "package": "npm run compile"
   },
   "dependencies": {
-    "@google/generative-ai": "^0.21.0"
+    "@google/genai": "^2.27.0",
+    "@google/generative-ai": "^0.24.1"
   },
   "devDependencies": {
-    "@types/vscode": "^1.90.0",
     "@types/node": "20.x",
-    "typescript": "^5.4.5",
-    "esbuild": "^0.21.5"
+    "@types/vscode": "^1.90.0",
+    "esbuild": "^0.21.5",
+    "typescript": "^5.4.5"
   }
 }

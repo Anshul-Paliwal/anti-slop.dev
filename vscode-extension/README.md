@@ -4,53 +4,47 @@
 
 ## Features
 
-### 🤖 AI-Powered Code Analysis
-- Uses **Gemini Flash 2.0** (or other Gemini models) to detect vibe-coded patterns
-- **BYOK (Bring Your Own Key)** - use your own Gemini API key
-- Analyzes individual files or entire workspaces
-- Real-time feedback on code quality
-
-### 🚨 Pattern Detection
-The extension identifies common AI-generated code smells:
-- Over-generic variable/function names
-- Excessive obvious comments
-- Overly defensive programming
-- Cookie-cutter patterns without context
-- Missing edge cases
-- Unnecessary boilerplate
-- Inconsistent naming conventions
-- Dead code or unused imports
-
-### 📊 Analysis Reports
-- Visual dashboards with risk scores
-- Detailed pattern breakdowns
-- Actionable improvement suggestions
-- Historical analysis tracking
-
-### ⚙️ Pipeline Support
-- Create custom analysis pipelines
-- Schedule automated scans
-- Target specific file patterns
-- Enable/disable pipelines on demand
+### 🤖 AI-Powered Code Analysis & Gemini Free Tier Support
+- Uses **Gemini 3.8 Flash** (or `gemini-3.8-pro`, `gemini-3.0-flash`, `gemini-2.5-flash`) to detect vibe-coded patterns.
+- **100% Free Tier Ready (Google AI Studio BYOK)**:
+  - Built-in one-click link to generate a free Gemini API key: [Google AI Studio](https://aistudio.google.com/app/apikey).
+  - Secure credential storage using VS Code's native Secret Storage (no plain-text settings leakage).
+  - Instant API key testing & validation (`Anti-Slop: Test Gemini API Key`).
+  - **Free Tier Quota Optimization**:
+    - **Unified Single-Call Scan**: Analyzes all slop categories (ChatGPT, Claude, Copilot, Security, UI, Architecture) in **1 single API call** rather than 6 separate requests, conserving 85% of your 15 RPM free quota!
+    - **Adaptive Rate-Limiting & Exponential Backoff**: Automatically catches HTTP 429 / `RESOURCE_EXHAUSTED` and safely pauses before retrying.
+    - **Workspace Pacing**: Automatically paces workspace scans (4s delay) to stay safely beneath the 15 RPM ceiling.
+- **Hybrid Static + AI Detection**:
+  - Runs zero-cost, instant AST & regex heuristics (console statements, debuggers, empty catch blocks, placeholder tokens) locally.
+  - Can function even without an API key or when offline!
+- **In-Editor Inline Diagnostics**:
+  - Displays squiggly lines and Problem panel entries pointing directly to slop lines with actionable human fixes.
+- **Activity Bar Sidebar**:
+  - Explore findings file-by-file in the **Analysis Results** view.
+  - Jump directly to flagged code with a single click.
 
 ## Getting Started
 
-### 1. Install the Extension
+### 1. Install & Build
 ```bash
 cd vscode-extension
 npm install
 npm run compile
 ```
 
-### 2. Configure Your API Key
-1. Open VS Code Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`)
+### 2. Configure Your Free Gemini API Key
+1. Open the VS Code Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`).
 2. Run: **Anti-Slop: Configure Gemini API Key**
-3. Enter your [Gemini API key](https://ai.google.dev/)
+3. Select **Get Free Gemini API Key** (opens [Google AI Studio](https://aistudio.google.com/app/apikey)) to generate your key, or choose **Enter Gemini API Key** to paste it.
+4. Run **Anti-Slop: Test Gemini API Key** to confirm your key is validated and ready!
 
 ### 3. Start Analyzing
+- **Quick Slop Scan (Free Tier Unified)**: `Ctrl+Shift+P` → `Anti-Slop: Quick Slop Scan (Free Tier Unified)`
 - **Analyze Current File**: `Ctrl+Shift+P` → `Anti-Slop: Analyze Current File`
-- **Analyze Workspace**: `Ctrl+Shift+P` → `Anti-Slop: Analyze Entire Workspace`
-- **View Report**: `Ctrl+Shift+P` → `Anti-Slop: Show Analysis Report`
+- **Analyze with All Skills**: `Ctrl+Shift+P` → `Anti-Slop: Analyze with All Skills`
+- **Analyze Entire Workspace**: `Ctrl+Shift+P` → `Anti-Slop: Analyze Entire Workspace`
+- **Show Analysis Report**: `Ctrl+Shift+P` → `Anti-Slop: Show Analysis Report`
+- **Clear Results & Diagnostics**: `Ctrl+Shift+P` → `Anti-Slop: Clear Results & Diagnostics`
 
 ## Configuration
 
@@ -58,38 +52,44 @@ Access settings via `File > Preferences > Settings` → Search "Anti-Slop"
 
 ```json
 {
-  "antiSlop.geminiApiKey": "",
-  "antiSlop.model": "gemini-2.0-flash-exp",
+  "antiSlop.model": "gemini-3.8-flash",
+  "antiSlop.useUnifiedScan": true,
+  "antiSlop.enableInlineDiagnostics": true,
+  "antiSlop.enableLocalHeuristics": true,
   "antiSlop.analysisThreshold": 0.7,
-  "antiSlop.autoAnalyzeOnSave": false,
-  "antiSlop.excludePatterns": [
-    "**/node_modules/**",
-    "**/dist/**",
-    "**/build/**",
-    "**/.git/**"
-  ]
+  "antiSlop.autoAnalyzeOnSave": false
 }
 ```
 
-### Settings
+### Settings Reference
 
 | Setting | Description | Default |
 |---------|-------------|---------|
-| `geminiApiKey` | Your Gemini API key | `""` |
-| `model` | Gemini model to use | `"gemini-2.0-flash-exp"` |
+| `model` | Gemini model (`gemini-3.8-flash`, `gemini-3.8-pro`, `gemini-3.0-flash`, `gemini-2.5-flash`) | `"gemini-3.8-flash"` |
+| `useUnifiedScan` | Single-prompt scan to conserve Gemini Free Tier 15 RPM quota | `true` |
+| `enableInlineDiagnostics` | Show squiggles and findings in VS Code Problems panel | `true` |
+| `enableLocalHeuristics` | Run local AST heuristic checks with 0 API calls | `true` |
 | `analysisThreshold` | Score threshold for warnings (0-1) | `0.7` |
 | `autoAnalyzeOnSave` | Auto-analyze files on save | `false` |
-| `excludePatterns` | Glob patterns to exclude | See above |
+| `excludePatterns` | Glob patterns to exclude from workspace scans | `["**/node_modules/**", ...]` |
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `Anti-Slop: Configure Gemini API Key` | Set up your API key |
-| `Anti-Slop: Analyze Current File` | Analyze the active file |
-| `Anti-Slop: Analyze Entire Workspace` | Scan all code files |
-| `Anti-Slop: Show Analysis Report` | View full report |
-| `Anti-Slop: Create Analysis Pipeline` | Set up automated scans |
+| `Anti-Slop: Configure Gemini API Key` | Interactive API key management menu |
+| `Anti-Slop: Get Free Gemini API Key` | Open Google AI Studio to obtain free key |
+| `Anti-Slop: Test Gemini API Key` | Test API key connection and quota |
+| `Anti-Slop: Quick Slop Scan (Free Tier Unified)` | 1-call comprehensive scan |
+| `Anti-Slop: Analyze Current File` | Analyze active editor document |
+| `Anti-Slop: Analyze with All Skills` | Run individual model-specific skills |
+| `Anti-Slop: Select Skills and Analyze` | Pick specific skills to run |
+| `Anti-Slop: Analyze by Category` | Scan for specific category (AI Slop, Security, etc.) |
+| `Anti-Slop: List Available Skills` | View catalog of detection skills |
+| `Anti-Slop: Analyze Entire Workspace` | Scan all code files with Free-Tier pacing |
+| `Anti-Slop: Clear Results & Diagnostics` | Reset findings and editor squiggles |
+| `Anti-Slop: Show Analysis Report` | Open interactive visual dashboard |
+| `Anti-Slop: Create Analysis Pipeline` | Save custom scan pipelines |
 
 ## Supported Languages
 

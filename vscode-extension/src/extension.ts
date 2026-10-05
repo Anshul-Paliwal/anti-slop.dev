@@ -1,80 +1,254 @@
 import * as vscode from 'vscode';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import * as path from 'path';
-import * as fs from 'fs';
+import { GeminiService, cleanApiKey } from './gemini-client';
 import { SkillManager, SkillAnalysisResult, SkillResult, Finding } from './skills';
+import { runLocalRules, LocalSlopIssue } from './local-rules';
+import {
+    ResultsTreeProvider,
+    PipelinesTreeProvider,
+    PipelineItem,
+    TreeAnalysisResult
+} from './tree-provider';
 
 interface AnalysisResult {
     file: string;
+    filePath?: string;
     score: number;
     patterns: string[];
     suggestions: string[];
     timestamp: Date;
+    findings?: Finding[];
 }
 
 interface ExtendedAnalysisResult extends AnalysisResult {
     skillResults?: SkillAnalysisResult;
+    localIssues?: LocalSlopIssue[];
 }
 
-interface Pipeline {
-    id: string;
-    name: string;
-    filePatterns: string[];
-    schedule?: string;
-    enabled: boolean;
-}
-
-class AntiSlopAnalyzer {
-    private genAI: GoogleGenerativeAI | null = null;
-    private skillManager: SkillManager | null = null;
+export class AntiSlopAnalyzer {
+    private geminiService: GeminiService;
+    private skillManager: SkillManager;
     private results: Map<string, ExtendedAnalysisResult> = new Map();
-    private pipelines: Pipeline[] = [];
+    private pipelines: PipelineItem[] = [];
     private outputChannel: vscode.OutputChannel;
+    private diagnosticCollection: vscode.DiagnosticCollection;
+    public resultsTreeProvider: ResultsTreeProvider;
+    public pipelinesTreeProvider: PipelinesTreeProvider;
 
     constructor(private context: vscode.ExtensionContext) {
         this.outputChannel = vscode.window.createOutputChannel('Anti-Slop');
+        this.diagnosticCollection = vscode.languages.createDiagnosticCollection('anti-slop');
+        this.context.subscriptions.push(this.diagnosticCollection);
+
+        this.geminiService = GeminiService.getInstance(context);
+        this.skillManager = new SkillManager('', this.geminiService.getActiveModelName(), this.geminiService);
+
+        this.resultsTreeProvider = new ResultsTreeProvider();
+        this.pipelinesTreeProvider = new PipelinesTreeProvider();
+
         this.loadPipelines();
-        this.initializeSkillManager();
     }
 
-    private initializeSkillManager(): void {
-        const apiKey = this.getApiKey();
-        if (apiKey) {
-            const config = vscode.workspace.getConfiguration('antiSlop');
-            const model = config.get<string>('model') || 'gemini-2.0-flash-exp';
-            this.skillManager = new SkillManager(apiKey, model);
-        }
-    }
-
-    private getApiKey(): string | undefined {
-        const config = vscode.workspace.getConfiguration('antiSlop');
-        return config.get<string>('geminiApiKey');
-    }
-
-    private initializeAI(): boolean {
-        const apiKey = this.getApiKey();
-        if (!apiKey) {
-            vscode.window.showErrorMessage(
-                'Gemini API key not configured. Run "Anti-Slop: Configure Gemini API Key"'
-            );
-            return false;
-        }
-        this.genAI = new GoogleGenerativeAI(apiKey);
-        this.initializeSkillManager();
-        return true;
-    }
-
-    async analyzeCode(code: string, fileName: string): Promise<AnalysisResult> {
-        if (!this.initializeAI() || !this.genAI) {
-            throw new Error('AI not initialized');
+    /**
+     * Verify or prompt for Gemini API Key (with Free Tier guidance).
+     */
+    async ensureApiKey(): Promise<boolean> {
+        const { key } = await this.geminiService.getApiKey();
+        if (key) {
+            this.skillManager.updateApiKey(key);
+            this.skillManager.setGeminiService(this.geminiService);
+            return true;
         }
 
-        const config = vscode.workspace.getConfiguration('antiSlop');
-        const model = this.genAI.getGenerativeModel({ 
-            model: config.get<string>('model') || 'gemini-2.0-flash-exp'
+        const choice = await vscode.window.showWarningMessage(
+            'Anti-Slop requires a Gemini API key. You can get a free key instantly from Google AI Studio.',
+            'Enter API Key',
+            'Get Free Key (Google AI Studio)',
+            'Scan Locally (AST Only)'
+        );
+
+        if (choice === 'Get Free Key (Google AI Studio)') {
+            await GeminiService.openAiStudioForFreeKey();
+            // Prompt right away after opening browser
+            await this.configureApiKey();
+            const checked = await this.geminiService.getApiKey();
+            return !!checked.key;
+        } else if (choice === 'Enter API Key') {
+            await this.configureApiKey();
+            const checked = await this.geminiService.getApiKey();
+            return !!checked.key;
+        }
+
+        return false;
+    }
+
+    /**
+     * Interactive API Key setup menu.
+     */
+    async configureApiKey(): Promise<void> {
+        const current = await this.geminiService.getApiKey();
+        const statusText = current.key
+            ? `(Configured via ${current.source})`
+            : '(Not configured)';
+
+        const selection = await vscode.window.showQuickPick([
+            {
+                label: '$(key) Enter Gemini API Key',
+                description: statusText,
+                detail: 'Paste your key from Google AI Studio (Free tier supported)'
+            },
+            {
+                label: '$(globe) Get Free Gemini API Key',
+                description: 'https://aistudio.google.com/app/apikey',
+                detail: 'Open Google AI Studio in browser to generate a free API key'
+            },
+            {
+                label: '$(beaker) Test Current API Key',
+                description: `Model: ${this.geminiService.getActiveModelName()}`,
+                detail: 'Send a test ping to Google Gemini to verify connection & quota'
+            },
+            {
+                label: '$(trash) Clear Saved API Key',
+                description: 'Remove stored key from VS Code secure vault',
+                detail: 'Delete the saved credential'
+            }
+        ], {
+            placeHolder: 'Anti-Slop: Gemini API Key Management'
         });
 
-        const prompt = `Analyze this code for "vibe-coded" patterns - characteristics of AI-generated code that may lack human engineering judgment:
+        if (!selection) return;
+
+        if (selection.label.includes('Enter Gemini API Key')) {
+            const inputKey = await vscode.window.showInputBox({
+                prompt: 'Enter your Gemini API key from Google AI Studio',
+                password: true,
+                ignoreFocusOut: true,
+                placeHolder: 'AIzaSy...'
+            });
+
+            if (inputKey && inputKey.trim().length > 0) {
+                const cleaned = cleanApiKey(inputKey);
+                // Validate before saving
+                await vscode.window.withProgress({
+                    location: vscode.ProgressLocation.Notification,
+                    title: 'Validating Gemini API key...',
+                    cancellable: false
+                }, async () => {
+                    const validation = await this.geminiService.validateApiKey(cleaned);
+                    if (validation.valid) {
+                        await this.geminiService.storeApiKey(cleaned);
+                        this.skillManager.updateApiKey(cleaned);
+                        this.skillManager.setGeminiService(this.geminiService);
+                        vscode.window.showInformationMessage(
+                            `✅ Gemini Free Key saved & validated! Model: ${this.geminiService.getActiveModelName()}`
+                        );
+                    } else {
+                        const proceed = await vscode.window.showErrorMessage(
+                            `Validation warning: ${validation.error || 'Failed to connect'}. Save anyway?`,
+                            'Save Anyway',
+                            'Cancel'
+                        );
+                        if (proceed === 'Save Anyway') {
+                            await this.geminiService.storeApiKey(cleaned);
+                            this.skillManager.updateApiKey(cleaned);
+                            this.skillManager.setGeminiService(this.geminiService);
+                            vscode.window.showInformationMessage('API key saved.');
+                        }
+                    }
+                });
+            }
+        } else if (selection.label.includes('Get Free Gemini API Key')) {
+            await GeminiService.openAiStudioForFreeKey();
+            vscode.window.showInformationMessage(
+                'Opening Google AI Studio... Once you generate your key, click "Anti-Slop: Configure Gemini API Key" to paste it.'
+            );
+        } else if (selection.label.includes('Test Current API Key')) {
+            await this.testApiKey();
+        } else if (selection.label.includes('Clear Saved API Key')) {
+            await this.geminiService.clearApiKey();
+            vscode.window.showInformationMessage('Gemini API key has been cleared.');
+        }
+    }
+
+    /**
+     * Send a lightweight verification ping to Gemini API.
+     */
+    async testApiKey(): Promise<void> {
+        await vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: 'Testing Gemini API connection...',
+            cancellable: false
+        }, async () => {
+            const result = await this.geminiService.validateApiKey();
+            const model = this.geminiService.getActiveModelName();
+            if (result.valid) {
+                vscode.window.showInformationMessage(
+                    `✅ Gemini API Key is active & ready! Using model: ${model} (Free Tier compatible).`
+                );
+            } else {
+                vscode.window.showErrorMessage(
+                    `❌ Gemini API connection failed: ${result.error || 'Unknown error'}. Check your key or free tier quota.`
+                );
+            }
+        });
+    }
+
+    /**
+     * Clear all current diagnostics and analysis results.
+     */
+    clearResults(): void {
+        this.results.clear();
+        this.diagnosticCollection.clear();
+        this.resultsTreeProvider.refresh(this.convertToTreeResults());
+        vscode.window.showInformationMessage('Anti-Slop results and diagnostics cleared.');
+    }
+
+    /**
+     * Main analysis method for a single file.
+     * Combines fast local heuristics + Gemini Free Tier LLM analysis.
+     */
+    async analyzeFile(fileUri: vscode.Uri, forceUnified: boolean = true): Promise<void> {
+        const document = await vscode.workspace.openTextDocument(fileUri);
+        const code = document.getText();
+        const fileName = path.basename(fileUri.fsPath);
+        const config = vscode.workspace.getConfiguration('antiSlop');
+        const enableLocal = config.get<boolean>('enableLocalHeuristics', true);
+        const useUnified = forceUnified || config.get<boolean>('useUnifiedScan', true);
+
+        // 1. Run zero-cost local heuristic checks immediately
+        let localIssues: LocalSlopIssue[] = [];
+        if (enableLocal) {
+            localIssues = runLocalRules(code, fileName);
+        }
+
+        const hasKey = await this.ensureApiKey();
+
+        await vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: `Anti-Slop: Analyzing ${fileName}...`,
+            cancellable: false
+        }, async (progress) => {
+            try {
+                let aiFindings: Finding[] = [];
+                let overallScore = 0;
+                let patterns: string[] = [];
+                let suggestions: string[] = [];
+                let skillResult: SkillAnalysisResult | undefined;
+
+                if (hasKey) {
+                    try {
+                        if (useUnified) {
+                            progress.report({ message: 'Running Gemini Unified scan (1 API call)...' });
+                            skillResult = await this.skillManager.analyzeUnified(code, fileName, (msg) => {
+                                progress.report({ message: msg });
+                            });
+                            overallScore = skillResult.overallScore;
+                            aiFindings = skillResult.results.flatMap(r => r.findings);
+                            patterns = aiFindings.map(f => f.pattern);
+                            suggestions = aiFindings.map(f => f.suggestion);
+                        } else {
+                            progress.report({ message: 'Querying Gemini model...' });
+                            const prompt = `Analyze this code for "vibe-coded" patterns - characteristics of AI-generated code that may lack human engineering judgment:
 
 File: ${fileName}
 
@@ -84,15 +258,11 @@ ${code}
 \`\`\`
 
 Identify:
-1. Over-generic variable/function names (e.g., "handleClick", "processData", "result")
+1. Over-generic variable/function names
 2. Excessive comments that restate obvious code
-3. Overly defensive programming (unnecessary null checks, try-catch everywhere)
+3. Overly defensive programming (unnecessary null checks everywhere)
 4. Cookie-cutter patterns without project context
-5. Missing edge cases that a human would consider
-6. Boilerplate-heavy code without customization
-7. Inconsistent naming conventions
-8. Dead code or unused imports
-9. Missing error handling where it matters
+5. Silent error handling or swallowed exceptions
 
 Respond in JSON format:
 {
@@ -100,76 +270,95 @@ Respond in JSON format:
   "patterns": [<list of detected patterns>],
   "suggestions": [<actionable improvements>]
 }`;
+                            const response = await this.geminiService.generateWithRetry(prompt);
+                            let jsonText = response;
+                            const match = response.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/);
+                            if (match) {
+                                jsonText = match[1];
+                            }
+                            const parsed = JSON.parse(jsonText);
+                            overallScore = parsed.score || 0;
+                            patterns = parsed.patterns || [];
+                            suggestions = parsed.suggestions || [];
+                            aiFindings = patterns.map(p => ({
+                                severity: 'medium',
+                                pattern: p,
+                                description: p,
+                                suggestion: suggestions[0] || 'Refactor code to conform to engineering best practices.'
+                            }));
+                        }
+                    } catch (aiErr: any) {
+                        const aiMsg = aiErr?.message || String(aiErr);
+                        vscode.window.showWarningMessage(
+                            `Gemini AI rate limit reached. Displaying local static analysis results for ${fileName}.`
+                        );
+                        this.outputChannel.appendLine(`AI scan throttled: ${aiMsg}. Using local heuristics.`);
+                    }
+                }
 
-        try {
-            const result = await model.generateContent(prompt);
-            const response = result.response.text();
-            
-            // Extract JSON from markdown code blocks if present
-            let jsonText = response;
-            const jsonMatch = response.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/);
-            if (jsonMatch) {
-                jsonText = jsonMatch[1];
-            }
+                // If AI was skipped or failed, compute score from local issues
+                if ((!hasKey || aiFindings.length === 0) && localIssues.length > 0) {
+                    overallScore = Math.min(1.0, localIssues.length * 0.25);
+                    patterns = localIssues.map(i => i.message);
+                    suggestions = localIssues.map(i => i.remediationSuggestion);
+                }
 
-            const analysis = JSON.parse(jsonText);
-            
-            const analysisResult: AnalysisResult = {
-                file: fileName,
-                score: analysis.score || 0,
-                patterns: analysis.patterns || [],
-                suggestions: analysis.suggestions || [],
-                timestamp: new Date()
-            };
+                const extendedResult: ExtendedAnalysisResult = {
+                    file: fileName,
+                    filePath: fileUri.fsPath,
+                    score: overallScore,
+                    patterns,
+                    suggestions,
+                    timestamp: new Date(),
+                    findings: aiFindings,
+                    skillResults: skillResult,
+                    localIssues
+                };
 
-            this.results.set(fileName, analysisResult);
-            return analysisResult;
-        } catch (error) {
-            this.outputChannel.appendLine(`Error analyzing ${fileName}: ${error}`);
-            throw error;
-        }
-    }
+                this.results.set(fileUri.fsPath, extendedResult);
 
-    async analyzeFile(fileUri: vscode.Uri): Promise<void> {
-        const document = await vscode.workspace.openTextDocument(fileUri);
-        const code = document.getText();
-        const fileName = path.basename(fileUri.fsPath);
+                // Update in-editor diagnostics and sidebar
+                this.updateDiagnostics(fileUri, aiFindings, localIssues);
+                this.resultsTreeProvider.refresh(this.convertToTreeResults());
 
-        await vscode.window.withProgress({
-            location: vscode.ProgressLocation.Notification,
-            title: `Analyzing ${fileName}...`,
-            cancellable: false
-        }, async () => {
-            try {
-                const result = await this.analyzeCode(code, fileName);
-                const threshold = vscode.workspace.getConfiguration('antiSlop')
-                    .get<number>('analysisThreshold') || 0.7;
+                const threshold = config.get<number>('analysisThreshold') || 0.7;
+                const pct = (overallScore * 100).toFixed(0);
 
-                if (result.score >= threshold) {
+                if (overallScore >= threshold) {
                     vscode.window.showWarningMessage(
-                        `${fileName} has high vibe-code score: ${(result.score * 100).toFixed(0)}%`,
-                        'Show Details'
-                    ).then(selection => {
-                        if (selection === 'Show Details') {
-                            this.showResultDetails(result);
+                        `⚠️ ${fileName} flagged with high vibe-code score: ${pct}% (${aiFindings.length + localIssues.length} issues)`,
+                        'Show Details',
+                        'Show Report'
+                    ).then(sel => {
+                        if (sel === 'Show Details') {
+                            if (skillResult) {
+                                this.showSkillResultDetails(skillResult);
+                            } else {
+                                this.showResultDetails(extendedResult);
+                            }
+                        } else if (sel === 'Show Report') {
+                            this.showReport();
                         }
                     });
                 } else {
                     vscode.window.showInformationMessage(
-                        `${fileName} analysis complete. Score: ${(result.score * 100).toFixed(0)}%`
+                        `✅ ${fileName} scan complete. Vibe score: ${pct}% (${aiFindings.length + localIssues.length} issues found)`
                     );
                 }
-            } catch (error) {
-                vscode.window.showErrorMessage(`Analysis failed: ${error}`);
+            } catch (err: any) {
+                const msg = err?.message || String(err);
+                this.outputChannel.appendLine(`Error analyzing ${fileName}: ${msg}`);
+                vscode.window.showErrorMessage(`Anti-Slop analysis failed: ${msg}`);
             }
         });
     }
 
+    /**
+     * Analyze with all individual skills sequentially.
+     */
     async analyzeFileWithSkills(fileUri: vscode.Uri, selectedSkills?: string[]): Promise<void> {
-        if (!this.skillManager) {
-            vscode.window.showErrorMessage('Skill manager not initialized. Check API key.');
-            return;
-        }
+        const hasKey = await this.ensureApiKey();
+        if (!hasKey) return;
 
         const document = await vscode.workspace.openTextDocument(fileUri);
         const code = document.getText();
@@ -177,46 +366,52 @@ Respond in JSON format:
 
         await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
-            title: `Analyzing ${fileName} with skills...`,
+            title: `Anti-Slop: Multi-Skill Analysis for ${fileName}...`,
             cancellable: false
-        }, async () => {
+        }, async (progress) => {
             try {
-                const skillResult = await this.skillManager!.analyzeWithAllSkills(
+                const skillResult = await this.skillManager.analyzeWithAllSkills(
                     code,
                     fileName,
-                    selectedSkills
+                    selectedSkills,
+                    (skillName, idx, total) => {
+                        progress.report({ message: `Running skill ${idx}/${total}: ${skillName}...` });
+                    }
                 );
 
+                const findings = skillResult.results.flatMap(r => r.findings);
                 const extendedResult: ExtendedAnalysisResult = {
                     file: fileName,
+                    filePath: fileUri.fsPath,
                     score: skillResult.overallScore,
-                    patterns: [],
-                    suggestions: [],
+                    patterns: findings.map(f => f.pattern),
+                    suggestions: findings.map(f => f.suggestion),
                     timestamp: skillResult.timestamp,
+                    findings,
                     skillResults: skillResult
                 };
 
-                this.results.set(fileName, extendedResult);
+                this.results.set(fileUri.fsPath, extendedResult);
+                this.updateDiagnostics(fileUri, findings, []);
+                this.resultsTreeProvider.refresh(this.convertToTreeResults());
 
                 vscode.window.showInformationMessage(
-                    `${fileName} skill analysis complete. Score: ${(skillResult.overallScore * 100).toFixed(0)}%`,
+                    `Multi-skill analysis complete for ${fileName}. Score: ${(skillResult.overallScore * 100).toFixed(0)}%`,
                     'Show Details'
-                ).then(selection => {
-                    if (selection === 'Show Details') {
+                ).then(sel => {
+                    if (sel === 'Show Details') {
                         this.showSkillResultDetails(skillResult);
                     }
                 });
-            } catch (error) {
-                vscode.window.showErrorMessage(`Skill analysis failed: ${error}`);
+            } catch (err: any) {
+                vscode.window.showErrorMessage(`Multi-skill analysis error: ${err?.message || err}`);
             }
         });
     }
 
     async analyzeByCategory(fileUri: vscode.Uri): Promise<void> {
-        if (!this.skillManager) {
-            vscode.window.showErrorMessage('Skill manager not initialized.');
-            return;
-        }
+        const hasKey = await this.ensureApiKey();
+        if (!hasKey) return;
 
         const categories = this.skillManager.getCategories();
         const category = await vscode.window.showQuickPick(categories, {
@@ -235,35 +430,25 @@ Respond in JSON format:
             cancellable: false
         }, async () => {
             try {
-                const skillResult = await this.skillManager!.analyzeByCategory(
-                    category,
-                    code,
-                    fileName
-                );
-
+                const skillResult = await this.skillManager.analyzeByCategory(category, code, fileName);
                 this.showSkillResultDetails(skillResult);
-            } catch (error) {
-                vscode.window.showErrorMessage(`Category analysis failed: ${error}`);
+            } catch (error: any) {
+                vscode.window.showErrorMessage(`Category analysis failed: ${error?.message || error}`);
             }
         });
     }
 
     async selectAndAnalyzeWithSkills(fileUri: vscode.Uri): Promise<void> {
-        if (!this.skillManager) {
-            vscode.window.showErrorMessage('Skill manager not initialized.');
-            return;
-        }
-
         const skills = this.skillManager.getAvailableSkills();
         const selected = await vscode.window.showQuickPick(
             skills.map(s => ({
                 label: s.name,
                 description: s.category,
                 detail: s.description,
-                picked: true
+                picked: s.name === 'Unified AI Slop Detector'
             })),
             {
-                placeHolder: 'Select skills to run',
+                placeHolder: 'Select skills to run (Unified recommended for Free Tier)',
                 canPickMany: true
             }
         );
@@ -274,19 +459,45 @@ Respond in JSON format:
         await this.analyzeFileWithSkills(fileUri, selectedNames);
     }
 
+    async listSkills(): Promise<void> {
+        const skills = this.skillManager.getAvailableSkills();
+        await vscode.window.showQuickPick(
+            skills.map(s => ({
+                label: s.name,
+                description: `[${s.category}]`,
+                detail: s.description
+            })),
+            {
+                placeHolder: 'Available Anti-Slop Detection Skills'
+            }
+        );
+    }
+
+    /**
+     * Scan workspace with Free-Tier pacing (4s interval) to protect 15 RPM quota.
+     */
     async analyzeWorkspace(): Promise<void> {
         const config = vscode.workspace.getConfiguration('antiSlop');
         const excludePatterns = config.get<string[]>('excludePatterns') || [];
-        
+        const pacingMs = config.get<number>('freeTierRateLimitPacingMs', 4000);
+
         const files = await vscode.workspace.findFiles(
             '**/*.{ts,js,tsx,jsx,py,java,cpp,c,go,rs}',
             `{${excludePatterns.join(',')}}`
         );
 
         if (files.length === 0) {
-            vscode.window.showInformationMessage('No code files found to analyze.');
+            vscode.window.showInformationMessage('No source files found to analyze.');
             return;
         }
+
+        const proceed = await vscode.window.showInformationMessage(
+            `Found ${files.length} file(s). On Gemini Free Tier (15 RPM), workspace analysis will pace requests (${Math.round(pacingMs / 1000)}s apart) to prevent 429 errors. Proceed?`,
+            'Start Scan',
+            'Cancel'
+        );
+
+        if (proceed !== 'Start Scan') return;
 
         await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
@@ -294,36 +505,124 @@ Respond in JSON format:
             cancellable: true
         }, async (progress, token) => {
             let analyzed = 0;
-            for (const file of files) {
+            for (let i = 0; i < files.length; i++) {
                 if (token.isCancellationRequested) {
+                    vscode.window.showWarningMessage('Workspace scan canceled.');
                     break;
                 }
 
+                const file = files[i];
                 progress.report({
                     increment: (100 / files.length),
-                    message: `${analyzed + 1}/${files.length} files`
+                    message: `${i + 1}/${files.length}: ${path.basename(file.fsPath)}`
                 });
 
                 try {
-                    await this.analyzeFile(file);
+                    // Unified single-prompt scan per file
+                    await this.analyzeFile(file, true);
                     analyzed++;
-                } catch (error) {
-                    this.outputChannel.appendLine(`Skipped ${file.fsPath}: ${error}`);
+                } catch (error: any) {
+                    this.outputChannel.appendLine(`Skipped ${file.fsPath}: ${error?.message || error}`);
                 }
 
-                // Rate limiting
-                await new Promise(resolve => setTimeout(resolve, 500));
+                // Pacing between files to stay under 15 RPM
+                if (i < files.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, pacingMs));
+                }
             }
 
             vscode.window.showInformationMessage(
-                `Workspace analysis complete. Analyzed ${analyzed}/${files.length} files.`,
+                `Workspace scan complete! Analyzed ${analyzed}/${files.length} file(s).`,
                 'Show Report'
-            ).then(selection => {
-                if (selection === 'Show Report') {
+            ).then(sel => {
+                if (sel === 'Show Report') {
                     this.showReport();
                 }
             });
         });
+    }
+
+    /**
+     * Map issues to VS Code in-editor diagnostics (squiggles & Problems panel).
+     */
+    private updateDiagnostics(
+        fileUri: vscode.Uri,
+        findings: Finding[],
+        localIssues: LocalSlopIssue[]
+    ): void {
+        const config = vscode.workspace.getConfiguration('antiSlop');
+        if (!config.get<boolean>('enableInlineDiagnostics', true)) {
+            return;
+        }
+
+        const diagnostics: vscode.Diagnostic[] = [];
+
+        // Local issues
+        for (const local of localIssues) {
+            const startLine = Math.max(0, local.line - 1);
+            const startCol = Math.max(0, local.column - 1);
+            const endLine = local.endLine ? Math.max(0, local.endLine - 1) : startLine;
+            const endCol = local.endColumn ? Math.max(0, local.endColumn - 1) : startCol + 10;
+
+            const range = new vscode.Range(startLine, startCol, endLine, endCol);
+            const severity = local.severity === 'error'
+                ? vscode.DiagnosticSeverity.Error
+                : local.severity === 'warning'
+                ? vscode.DiagnosticSeverity.Warning
+                : vscode.DiagnosticSeverity.Information;
+
+            const diag = new vscode.Diagnostic(
+                range,
+                `[Anti-Slop ${local.ruleId}] ${local.message} — ${local.remediationSuggestion}`,
+                severity
+            );
+            diag.source = 'Anti-Slop';
+            diagnostics.push(diag);
+        }
+
+        // AI findings
+        for (const finding of findings) {
+            let range: vscode.Range;
+            if (finding.lineRange && finding.lineRange.start > 0) {
+                const startLine = finding.lineRange.start - 1;
+                const endLine = (finding.lineRange.end || finding.lineRange.start) - 1;
+                range = new vscode.Range(startLine, 0, endLine, 999);
+            } else {
+                range = new vscode.Range(0, 0, 0, 999);
+            }
+
+            const severity = finding.severity === 'critical' || finding.severity === 'high'
+                ? vscode.DiagnosticSeverity.Error
+                : finding.severity === 'medium'
+                ? vscode.DiagnosticSeverity.Warning
+                : vscode.DiagnosticSeverity.Information;
+
+            const diag = new vscode.Diagnostic(
+                range,
+                `[Anti-Slop: ${finding.pattern}] ${finding.description}\n💡 ${finding.suggestion}`,
+                severity
+            );
+            diag.source = 'Anti-Slop (Gemini)';
+            diagnostics.push(diag);
+        }
+
+        this.diagnosticCollection.set(fileUri, diagnostics);
+    }
+
+    private convertToTreeResults(): Map<string, TreeAnalysisResult> {
+        const treeMap = new Map<string, TreeAnalysisResult>();
+        for (const [key, val] of this.results.entries()) {
+            treeMap.set(key, {
+                file: val.file,
+                filePath: val.filePath,
+                score: val.score,
+                patterns: val.patterns,
+                suggestions: val.suggestions,
+                timestamp: val.timestamp,
+                findings: val.findings
+            });
+        }
+        return treeMap;
     }
 
     showResultDetails(result: AnalysisResult): void {
@@ -333,7 +632,6 @@ Respond in JSON format:
             vscode.ViewColumn.Two,
             {}
         );
-
         panel.webview.html = this.getDetailsHtml(result);
     }
 
@@ -344,7 +642,6 @@ Respond in JSON format:
             vscode.ViewColumn.Two,
             { enableScripts: true }
         );
-
         panel.webview.html = this.getSkillDetailsHtml(skillResult);
     }
 
@@ -355,12 +652,11 @@ Respond in JSON format:
             vscode.ViewColumn.Two,
             {}
         );
-
         panel.webview.html = this.getReportHtml();
     }
 
     private getDetailsHtml(result: AnalysisResult): string {
-        const scoreColor = result.score >= 0.7 ? '#f44336' : 
+        const scoreColor = result.score >= 0.7 ? '#f44336' :
                           result.score >= 0.4 ? '#ff9800' : '#4caf50';
 
         return `<!DOCTYPE html>
@@ -404,7 +700,7 @@ Respond in JSON format:
         const scoreColor = skillResult.overallScore >= 0.7 ? '#f44336' : 
                           skillResult.overallScore >= 0.4 ? '#ff9800' : '#4caf50';
 
-        const severityColors = {
+        const severityColors: Record<string, string> = {
             critical: '#d32f2f',
             high: '#f44336',
             medium: '#ff9800',
@@ -441,7 +737,7 @@ Respond in JSON format:
                             </div>
                             <div class="findings">
                                 ${r.findings.map(f => `
-                                    <div class="finding" style="border-left: 4px solid ${severityColors[f.severity]}">
+                                    <div class="finding" style="border-left: 4px solid ${severityColors[f.severity] || '#999'}">
                                         <div class="finding-header">
                                             <span class="severity ${f.severity}">${f.severity.toUpperCase()}</span>
                                             <span class="pattern-name">${f.pattern}</span>
@@ -464,122 +760,31 @@ Respond in JSON format:
 <html>
 <head>
     <style>
-        body { 
-            font-family: 'Segoe UI', sans-serif; 
-            padding: 20px; 
-            background: #fafafa;
-        }
-        .header {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .overall-score { 
-            font-size: 64px; 
-            font-weight: bold; 
-            color: ${scoreColor}; 
-            margin: 10px 0;
-        }
-        .category-section {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        h2 { 
-            color: #333; 
-            border-bottom: 2px solid #ddd; 
-            padding-bottom: 10px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        h3 {
-            color: #555;
-            margin-top: 0;
-        }
-        .skill-result {
-            margin: 20px 0;
-            padding: 15px;
-            background: #f9f9f9;
-            border-radius: 6px;
-        }
-        .skill-score {
-            font-size: 32px;
-            font-weight: bold;
-            margin: 10px 0;
-        }
-        .findings {
-            margin-top: 15px;
-        }
-        .finding {
-            background: white;
-            padding: 15px;
-            margin: 10px 0;
-            border-radius: 4px;
-            border-left: 4px solid #ddd;
-        }
-        .finding-header {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-            margin-bottom: 10px;
-        }
-        .severity {
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 0.75em;
-            font-weight: bold;
-            color: white;
-        }
+        body { font-family: 'Segoe UI', sans-serif; padding: 20px; background: #fafafa; color: #222; }
+        .header { background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .overall-score { font-size: 64px; font-weight: bold; color: ${scoreColor}; margin: 10px 0; }
+        .category-section { background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h2 { color: #333; border-bottom: 2px solid #ddd; padding-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+        h3 { color: #555; margin-top: 0; }
+        .skill-result { margin: 20px 0; padding: 15px; background: #f9f9f9; border-radius: 6px; }
+        .skill-score { font-size: 32px; font-weight: bold; margin: 10px 0; }
+        .findings { margin-top: 15px; }
+        .finding { background: white; padding: 15px; margin: 10px 0; border-radius: 4px; border-left: 4px solid #ddd; }
+        .finding-header { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+        .severity { padding: 4px 8px; border-radius: 4px; font-size: 0.75em; font-weight: bold; color: white; }
         .severity.critical { background: #d32f2f; }
         .severity.high { background: #f44336; }
         .severity.medium { background: #ff9800; }
         .severity.low { background: #ffc107; color: #333; }
         .severity.info { background: #2196f3; }
-        .pattern-name {
-            font-weight: 600;
-            color: #333;
-        }
-        .finding-description {
-            color: #666;
-            margin: 8px 0;
-            line-height: 1.5;
-        }
-        .finding-suggestion {
-            background: #e3f2fd;
-            padding: 10px;
-            border-radius: 4px;
-            margin-top: 10px;
-            color: #1565c0;
-            line-height: 1.5;
-        }
-        .line-range {
-            font-size: 0.85em;
-            color: #999;
-            margin-top: 8px;
-        }
-        .stats {
-            display: flex;
-            gap: 20px;
-            margin-top: 20px;
-        }
-        .stat {
-            flex: 1;
-            text-align: center;
-        }
-        .stat-value {
-            font-size: 32px;
-            font-weight: bold;
-            color: #333;
-        }
-        .stat-label {
-            color: #666;
-            font-size: 0.9em;
-        }
+        .pattern-name { font-weight: 600; color: #333; }
+        .finding-description { color: #555; margin: 8px 0; line-height: 1.5; }
+        .finding-suggestion { background: #e3f2fd; padding: 10px; border-radius: 4px; margin-top: 10px; color: #1565c0; line-height: 1.5; }
+        .line-range { font-size: 0.85em; color: #888; margin-top: 8px; }
+        .stats { display: flex; gap: 20px; margin-top: 20px; }
+        .stat { flex: 1; text-align: center; }
+        .stat-value { font-size: 32px; font-weight: bold; color: #333; }
+        .stat-label { color: #666; font-size: 0.9em; }
     </style>
 </head>
 <body>
@@ -587,7 +792,6 @@ Respond in JSON format:
         <h1>Skill Analysis: ${skillResult.fileName}</h1>
         <div class="overall-score">${(skillResult.overallScore * 100).toFixed(0)}%</div>
         <p>Overall Vibe-Code Score</p>
-        
         <div class="stats">
             <div class="stat">
                 <div class="stat-value">${skillResult.results.length}</div>
@@ -597,15 +801,9 @@ Respond in JSON format:
                 <div class="stat-value">${skillResult.results.reduce((sum, r) => sum + r.findings.length, 0)}</div>
                 <div class="stat-label">Total Findings</div>
             </div>
-            <div class="stat">
-                <div class="stat-value">${skillResult.results.filter(r => r.findings.some(f => f.severity === 'critical' || f.severity === 'high')).length}</div>
-                <div class="stat-label">High-Risk Skills</div>
-            </div>
         </div>
-        
         <p><small>Analyzed: ${skillResult.timestamp.toLocaleString()}</small></p>
     </div>
-
     ${categorySections}
 </body>
 </html>`;
@@ -665,7 +863,7 @@ Respond in JSON format:
         <tr>
             <th>File</th>
             <th>Score</th>
-            <th>Patterns</th>
+            <th>Issues</th>
             <th>Timestamp</th>
         </tr>
         ${results.sort((a, b) => b.score - a.score).map(r => `
@@ -674,7 +872,7 @@ Respond in JSON format:
                 <td class="${r.score >= 0.7 ? 'high' : r.score >= 0.4 ? 'medium' : 'low'}">
                     ${(r.score * 100).toFixed(0)}%
                 </td>
-                <td>${r.patterns.length}</td>
+                <td>${(r.findings?.length ?? 0) + (r.localIssues?.length ?? 0)}</td>
                 <td><small>${r.timestamp.toLocaleString()}</small></td>
             </tr>
         `).join('')}
@@ -698,7 +896,7 @@ Respond in JSON format:
 
         if (!patterns) return;
 
-        const pipeline: Pipeline = {
+        const pipeline: PipelineItem = {
             id: Date.now().toString(),
             name,
             filePatterns: patterns.split(',').map(p => p.trim()),
@@ -707,55 +905,48 @@ Respond in JSON format:
 
         this.pipelines.push(pipeline);
         this.savePipelines();
+        this.pipelinesTreeProvider.refresh(this.pipelines);
 
         vscode.window.showInformationMessage(`Pipeline "${name}" created!`);
     }
 
     private loadPipelines(): void {
-        const stored = this.context.globalState.get<Pipeline[]>('pipelines');
+        const stored = this.context.globalState.get<PipelineItem[]>('pipelines');
         if (stored) {
             this.pipelines = stored;
+            this.pipelinesTreeProvider.refresh(this.pipelines);
         }
     }
 
     private savePipelines(): void {
         this.context.globalState.update('pipelines', this.pipelines);
     }
-
-    getResults(): Map<string, AnalysisResult> {
-        return this.results;
-    }
-
-    getPipelines(): Pipeline[] {
-        return this.pipelines;
-    }
 }
 
 export function activate(context: vscode.ExtensionContext) {
-    console.log('Anti-Slop extension activated!');
-
     const analyzer = new AntiSlopAnalyzer(context);
 
-    // Register commands
+    // Register Activity Bar Tree Views
+    vscode.window.registerTreeDataProvider('antiSlopResults', analyzer.resultsTreeProvider);
+    vscode.window.registerTreeDataProvider('antiSlopPipelines', analyzer.pipelinesTreeProvider);
+
+    // 1. API Key Configuration & Helper Commands
     context.subscriptions.push(
         vscode.commands.registerCommand('anti-slop.configureApiKey', async () => {
-            const apiKey = await vscode.window.showInputBox({
-                prompt: 'Enter your Gemini API key',
-                password: true,
-                ignoreFocusOut: true
-            });
-
-            if (apiKey) {
-                await vscode.workspace.getConfiguration('antiSlop').update(
-                    'geminiApiKey',
-                    apiKey,
-                    vscode.ConfigurationTarget.Global
-                );
-                vscode.window.showInformationMessage('API key saved!');
-            }
+            await analyzer.configureApiKey();
+        }),
+        vscode.commands.registerCommand('anti-slop.getFreeApiKey', async () => {
+            await GeminiService.openAiStudioForFreeKey();
+        }),
+        vscode.commands.registerCommand('anti-slop.testApiKey', async () => {
+            await analyzer.testApiKey();
+        }),
+        vscode.commands.registerCommand('anti-slop.clearResults', () => {
+            analyzer.clearResults();
         })
     );
 
+    // 2. File Analysis Commands
     context.subscriptions.push(
         vscode.commands.registerCommand('anti-slop.analyzeFile', async () => {
             const editor = vscode.window.activeTextEditor;
@@ -764,28 +955,58 @@ export function activate(context: vscode.ExtensionContext) {
                 return;
             }
             await analyzer.analyzeFile(editor.document.uri);
+        }),
+        vscode.commands.registerCommand('anti-slop.analyzeFileUnified', async () => {
+            const editor = vscode.window.activeTextEditor;
+            if (!editor) {
+                vscode.window.showErrorMessage('No active file to analyze');
+                return;
+            }
+            await analyzer.analyzeFile(editor.document.uri, true);
+        }),
+        vscode.commands.registerCommand('anti-slop.analyzeFileWithSkills', async () => {
+            const editor = vscode.window.activeTextEditor;
+            if (!editor) {
+                vscode.window.showErrorMessage('No active file to analyze');
+                return;
+            }
+            await analyzer.analyzeFileWithSkills(editor.document.uri);
+        }),
+        vscode.commands.registerCommand('anti-slop.selectSkills', async () => {
+            const editor = vscode.window.activeTextEditor;
+            if (!editor) {
+                vscode.window.showErrorMessage('No active file to analyze');
+                return;
+            }
+            await analyzer.selectAndAnalyzeWithSkills(editor.document.uri);
+        }),
+        vscode.commands.registerCommand('anti-slop.analyzeByCategory', async () => {
+            const editor = vscode.window.activeTextEditor;
+            if (!editor) {
+                vscode.window.showErrorMessage('No active file to analyze');
+                return;
+            }
+            await analyzer.analyzeByCategory(editor.document.uri);
+        }),
+        vscode.commands.registerCommand('anti-slop.listSkills', async () => {
+            await analyzer.listSkills();
         })
     );
 
+    // 3. Workspace & Pipeline Commands
     context.subscriptions.push(
         vscode.commands.registerCommand('anti-slop.analyzeWorkspace', async () => {
             await analyzer.analyzeWorkspace();
-        })
-    );
-
-    context.subscriptions.push(
+        }),
         vscode.commands.registerCommand('anti-slop.showReport', () => {
             analyzer.showReport();
-        })
-    );
-
-    context.subscriptions.push(
+        }),
         vscode.commands.registerCommand('anti-slop.createPipeline', async () => {
             await analyzer.createPipeline();
         })
     );
 
-    // Auto-analyze on save if enabled
+    // 4. Auto-analyze on Save Listener
     context.subscriptions.push(
         vscode.workspace.onDidSaveTextDocument(async (document) => {
             const config = vscode.workspace.getConfiguration('antiSlop');
@@ -794,8 +1015,6 @@ export function activate(context: vscode.ExtensionContext) {
             }
         })
     );
-
-    vscode.window.showInformationMessage('Anti-Slop extension ready! Configure your Gemini API key to start.');
 }
 
 export function deactivate() {}
