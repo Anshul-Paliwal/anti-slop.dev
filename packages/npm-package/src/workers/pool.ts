@@ -201,10 +201,10 @@ export class WorkerPool {
    * Fallback in-line execution for development or single-thread environments.
    */
   private async executeInline(batches: WorkerBatchTask[]): Promise<WorkerBatchResult[]> {
-    // Lazy imports to avoid loading parser in the main thread unless needed
-    const { parseSource } = require('../ast/parser');
-    const { buildLineMap } = require('../ast/visitor');
-    const { executeRules } = require('../rules');
+    // Dynamic imports to avoid loading parser in the main thread unless needed
+    const { parseSource } = await import('../ast/parser.js');
+    const { buildLineMap } = await import('../ast/visitor.js');
+    const { executeRules } = await import('../rules/index.js');
 
     const results: WorkerBatchResult[] = [];
 
