@@ -11,6 +11,6 @@
     "build": "npm run build -w @anti-slop/shared && npm run build -w @anti-slop/npm-package",
     "test": "npm run test -w @anti-slop/npm-package",
     "dev:frontend": "npm run dev -w @anti-slop/frontend",
-    "build:vscode": "npm run package -w @anti-slop/vscode-extension"
+    "build:vscode": "npm run package -w anti-slop-vscode"
   }
 }
