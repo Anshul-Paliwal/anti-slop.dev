@@ -6,6 +6,8 @@ import { ArchitectureVibeSkill } from './architecture-skill';
 import { ChatGPTSlopSkill } from './chatgpt-slop-skill';
 import { CopilotSlopSkill } from './copilot-slop-skill';
 import { ClaudeSlopSkill } from './claude-slop-skill';
+import { UnifiedSlopSkill } from './unified-skill';
+import { GeminiService } from '../gemini-client';
 
 export interface SkillAnalysisResult {
     fileName: string;
@@ -18,7 +20,11 @@ export class SkillManager {
     private skills: Map<string, BaseSkill> = new Map();
     private genAI: GoogleGenerativeAI | null = null;
 
-    constructor(private apiKey: string, private model: string = 'gemini-2.0-flash-exp') {
+    constructor(
+        private apiKey: string,
+        private model: string = 'gemini-2.0-flash',
+        private geminiService?: GeminiService
+    ) {
         this.initializeSkills();
         if (apiKey) {
             this.genAI = new GoogleGenerativeAI(apiKey);
@@ -26,13 +32,14 @@ export class SkillManager {
     }
 
     private initializeSkills(): void {
-        const skills = [
-            new SecurityVibeSkill(),
-            new UIVibeSkill(),
-            new ArchitectureVibeSkill(),
+        const skills: BaseSkill[] = [
+            new UnifiedSlopSkill(),
             new ChatGPTSlopSkill(),
+            new ClaudeSlopSkill(),
             new CopilotSlopSkill(),
-            new ClaudeSlopSkill()
+            new SecurityVibeSkill(),
+            new ArchitectureVibeSkill(),
+            new UIVibeSkill()
         ];
 
         for (const skill of skills) {
@@ -59,44 +66,90 @@ export class SkillManager {
     async analyzeWithSkill(
         skillName: string,
         code: string,
-        fileName: string
+        fileName: string,
+        onNotice?: (msg: string) => void
     ): Promise<SkillResult> {
-        if (!this.genAI) {
-            throw new Error('Gemini AI not initialized');
-        }
-
         const skill = this.skills.get(skillName);
         if (!skill) {
             throw new Error(`Skill not found: ${skillName}`);
         }
 
-        const model = this.genAI.getGenerativeModel({ model: this.model });
         const prompt = skill.getPrompt(code, fileName);
+        let responseText = '';
 
-        const result = await model.generateContent(prompt);
-        const response = result.response.text();
+        if (this.geminiService) {
+            // Use GeminiService with retry and rate limit handling
+            responseText = await this.geminiService.generateWithRetry(
+                prompt,
+                this.model,
+                3,
+                onNotice
+            );
+        } else if (this.genAI) {
+            const model = this.genAI.getGenerativeModel({ model: this.model });
+            const result = await model.generateContent(prompt);
+            responseText = result.response.text();
+        } else {
+            throw new Error('Gemini AI not initialized. Please configure your API key.');
+        }
 
-        return skill.parseResponse(response);
+        return skill.parseResponse(responseText);
+    }
+
+    /**
+     * Unified single-request analysis: all skills covered in one prompt.
+     * Conserves 85% of API quota — optimal for Gemini Free Tier (15 RPM).
+     */
+    async analyzeUnified(
+        code: string,
+        fileName: string,
+        onNotice?: (msg: string) => void
+    ): Promise<SkillAnalysisResult> {
+        const result = await this.analyzeWithSkill(
+            'Unified AI Slop Detector',
+            code,
+            fileName,
+            onNotice
+        );
+
+        return {
+            fileName,
+            results: [result],
+            overallScore: result.score,
+            timestamp: new Date()
+        };
     }
 
     async analyzeWithAllSkills(
         code: string,
         fileName: string,
-        selectedSkills?: string[]
+        selectedSkills?: string[],
+        onProgress?: (skillName: string, index: number, total: number) => void
     ): Promise<SkillAnalysisResult> {
+        // Exclude Unified from multi-run unless explicitly selected
+        const defaultSkills = Array.from(this.skills.values()).filter(
+            s => s.name !== 'Unified AI Slop Detector'
+        );
+
         const skillsToRun = selectedSkills
             ? selectedSkills.map(name => this.skills.get(name)).filter(Boolean) as BaseSkill[]
-            : Array.from(this.skills.values());
+            : defaultSkills;
 
         const results: SkillResult[] = [];
 
-        for (const skill of skillsToRun) {
+        for (let i = 0; i < skillsToRun.length; i++) {
+            const skill = skillsToRun[i];
             try {
+                if (onProgress) {
+                    onProgress(skill.name, i + 1, skillsToRun.length);
+                }
                 const result = await this.analyzeWithSkill(skill.name, code, fileName);
                 results.push(result);
                 
-                // Rate limiting - wait between requests
-                await new Promise(resolve => setTimeout(resolve, 500));
+                // Free Tier friendly pacing: 1.5s delay between multi-skill requests
+                if (i < skillsToRun.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                }
             } catch (error) {
                 console.error(`Error analyzing with ${skill.name}:`, error);
                 // Continue with other skills even if one fails
@@ -144,10 +197,16 @@ export class SkillManager {
 
     updateApiKey(apiKey: string): void {
         this.apiKey = apiKey;
-        this.genAI = new GoogleGenerativeAI(apiKey);
+        if (apiKey) {
+            this.genAI = new GoogleGenerativeAI(apiKey);
+        }
     }
 
     updateModel(model: string): void {
         this.model = model;
+    }
+
+    setGeminiService(service: GeminiService): void {
+        this.geminiService = service;
     }
 }
