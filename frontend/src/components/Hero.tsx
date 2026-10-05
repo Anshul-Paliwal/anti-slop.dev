@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { ArrowRight, Terminal } from "lucide-react";
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import KineticCenterBuild from "@/components/ui/smoothui/kinetic-center-build";
 
 export default function Hero() {
   const [typedText, setTypedText] = useState("");
@@ -12,19 +13,37 @@ export default function Hero() {
   // Typewriter effect
   useEffect(() => {
     let currentLength = 0;
-    const interval = setInterval(() => {
-      if (currentLength < fullText.length) {
-        setTypedText(fullText.slice(0, currentLength + 1));
-        currentLength++;
-      } else {
-        clearInterval(interval);
-      }
-    }, 100);
-    return () => clearInterval(interval);
+    
+    // Check if intro has been seen. If not, wait for it to finish (approx 3 seconds)
+    const hasSeenIntro = typeof window !== "undefined" && sessionStorage.getItem("antislop_intro_seen") === "true";
+    const initialDelay = hasSeenIntro ? 0 : 3200;
+
+    const timeout = setTimeout(() => {
+      const interval = setInterval(() => {
+        if (currentLength < fullText.length) {
+          setTypedText(fullText.slice(0, currentLength + 1));
+          currentLength++;
+        } else {
+          clearInterval(interval);
+        }
+      }, 100);
+      return () => clearInterval(interval);
+    }, initialDelay);
+
+    return () => clearTimeout(timeout);
   }, []);
 
   return (
     <section className="relative w-full min-h-[70vh] bg-transparent overflow-hidden flex flex-col justify-center pt-32 pb-8">
+      {/* Massive Background Kinetic Animation */}
+      <div className="absolute inset-0 z-0 flex items-center justify-center opacity-[0.03] pointer-events-none select-none overflow-hidden mix-blend-screen">
+        <KineticCenterBuild 
+          phrases={["AST_ENGINE", "ZERO_SLOP", "CLEAN_CODE", "NO_BLOAT"]} 
+          interval={4000} 
+          className="font-mono font-black text-[12vw] tracking-tighter text-white whitespace-nowrap"
+        />
+      </div>
+
       <div className="max-w-[90rem] mx-auto px-6 w-full flex flex-col relative z-10">
         
         {/* Top Row: Title & Button perfectly aligned */}
@@ -92,7 +111,11 @@ export default function Hero() {
               filter: ["blur(10px)", "blur(2px)", "blur(8px)", "blur(0px)", "blur(1px)", "blur(0px)"]
             }}
             viewport={{ once: true }}
-            transition={{ duration: 0.2, times: [0, 0.2, 0.4, 0.6, 0.8, 1] }}
+            transition={{ 
+              duration: 0.2, 
+              times: [0, 0.2, 0.4, 0.6, 0.8, 1],
+              delay: typeof window !== "undefined" && sessionStorage.getItem("antislop_intro_seen") === "true" ? 0 : 3.2 
+            }}
             className="text-6xl md:text-[5rem] lg:text-[7rem] font-black tracking-tighter text-right font-heading whitespace-nowrap order-1 md:order-2 flex items-baseline justify-end"
           >
             <span className="text-[#F5F5F4]">

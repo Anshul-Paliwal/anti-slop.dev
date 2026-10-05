@@ -2,8 +2,7 @@
 
 import { motion } from "framer-motion";
 import { useState } from "react";
-import { Copy, Check, Terminal, ExternalLink, ArrowRight, Sparkles } from "lucide-react";
-import { siNpm } from "simple-icons";
+import { Copy, Check, Terminal, ArrowRight } from "lucide-react";
 
 export default function InstallRow() {
   const [copied, setCopied] = useState(false);

@@ -1,39 +1,10 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Terminal, Shield, Workflow, Zap, Code2, Play } from "lucide-react";
+import { Terminal } from "lucide-react";
 import { useState, useEffect } from "react";
 
-const cards = [
-  {
-    id: 1,
-    title: "Catches real problems",
-    description: "Tailwind conflicts, logic bloat, debug leftovers, security holes, React anti-patterns.",
-    icon: Shield,
-    className: "col-span-1 md:col-span-2 row-span-1", // Wide
-  },
-  {
-    id: 2,
-    title: "Works with the agent you already use",
-    description: "Copilot, Cursor, Cline.",
-    icon: Code2,
-    className: "col-span-1 md:col-span-1 row-span-1", // Medium
-  },
-  {
-    id: 3,
-    title: "Local-first, zero setup",
-    description: "Free unlimited scans, generates antislop-report.md.",
-    icon: Terminal,
-    className: "col-span-1 md:col-span-2 row-span-1", // Wide
-  },
-  {
-    id: 4,
-    title: "Pro auto-fixes it",
-    description: "$9.99/mo, your own LLM key.",
-    icon: Zap,
-    className: "col-span-1 md:col-span-1 row-span-1 border-terminal-green/30 bg-terminal-green/5", // Narrow & Highlighted
-  }
-];
+
 
 export default function AboutSection() {
   const [progress, setProgress] = useState(0);

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Terminal, ShieldCheck, Sparkles, FastForward, CheckCircle2 } from "lucide-react";
+import { Terminal, Sparkles, FastForward } from "lucide-react";
 import KineticCenterBuild from "@/components/ui/smoothui/kinetic-center-build";
 
 interface TerminalIntroProps {
@@ -40,10 +40,10 @@ export default function TerminalIntro({ onComplete, forceShow = false }: Termina
       const replayParam = urlParams.get("intro") === "1" || urlParams.get("intro") === "true";
 
       if (!seen || forceShow || replayParam) {
-        setIsVisible(true);
+        setTimeout(() => setIsVisible(true), 0);
       }
     } catch {
-      setIsVisible(true);
+      setTimeout(() => setIsVisible(true), 0);
     }
   }, [forceShow]);
 
